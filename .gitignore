@@ -1,2 +1,11 @@
 /backend/venv/
 /backend/.env
+/backend/data/各類所得扣繳率標準.txt
+/backend/data/所得基本稅額條例.txt
+/backend/data/所得稅法.txt
+/backend/data/稅捐稽徵法.txt
+/backend/data/稅捐稽徵法施行細則.txt
+/backend/data/營利事業所得稅查核準則.txt
+/backend/data/營業稅法.txt
+/backend/data/processed_company_laws.csv
+/backend/data/processed_laws.csv

@@ -2,11 +2,13 @@ import os
 import json
 import numpy as np
 import google.generativeai as genai
+from google.generativeai import types
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from sklearn.metrics.pairwise import cosine_similarity
 import traceback
+from google.api_core import exceptions as api_exceptions
 
 # --- *** 修改路徑定義以使其相對於 app.py *** ---
 # 獲取 app.py 所在的目錄的絕對路徑
@@ -126,7 +128,7 @@ def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDI
 load_and_embed_data()
 
 # --- 向量搜尋函數 (確保 n 較小) ---
-def find_top_n_similar(query_embedding, doc_embeddings, n=50): # <-- *** 確保 n 值很小 ***
+def find_top_n_similar(query_embedding, doc_embeddings, n=10): # <-- *** 保持 n 值很小 ***
     """計算查詢向量與所有文件向量的相似度，返回最相似的 n 個索引"""
     if doc_embeddings is None or query_embedding is None:
         return []
@@ -160,7 +162,7 @@ def ask_question():
         print("問題向量生成完畢。")
 
         print("正在搜尋相關法規片段...")
-        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=50) # <-- *** 確保 n 值很小 ***
+        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=10) # <-- *** 確保 n 值很小 ***
         print(f"找到最相關的索引 (n={len(top_indices)}): {top_indices}")
 
         context = ""
@@ -175,35 +177,89 @@ def ask_question():
             context = "我們的法規資料庫中沒有找到直接相關的片段。"
             print("警告：未找到相關的法規片段。")
 
-        # --- *** 簡化 Prompt *** ---
+        # --- *** Prompt 保持要求區分來源的版本 *** ---
         prompt = f"""
-        你是一位專精於台灣法律的 AI 助理。請根據以下提供的「相關法規內容」來回答「使用者的問題」。
+        你是一位專精於台灣法律的 AI 助理。請結合以下提供的「法規資料庫內容」和必要的「網路搜尋結果」來回答「使用者的問題」。
 
         你的回答應該：
-        - 嚴格基於提供的「相關法規內容」。
-        - 如果提供的內容不足以回答問題，請明確說明無法根據現有資訊回答。
-        - 保持客觀、中立和專業。
-        - 使用繁體中文回答。
+        1.  **優先** 參考「法規資料庫內容」。如果這部分內容足以回答，請主要依據它。
+        2.  **僅在必要時** 使用「網路搜尋結果」來補充法規資料庫中沒有的資訊、最新的發展或進行事實核查。
+        3.  **非常重要：** 在你的回答中，必須 **明確區分** 資訊來源。使用如「根據我們資料庫中的《XX法》...」、「根據網路搜尋的最新資訊...」等字句來標示。
+        4.  如果兩個來源的資訊有衝突，請指出衝突點。
+        5.  如果法規資料庫和網路搜尋都無法提供答案，請明確說明。
+        6.  保持客觀、中立和專業。
+        7.  使用繁體中文回答。
 
-        --- 相關法規內容 ---
+        --- 法規資料庫內容 ---
         {context}
         --- 使用者的問題 ---
         {user_question}
 
-        --- 你的回答 ---
+        --- 你的回答 (請務必區分資訊來源) ---
         """
 
-        print("正在呼叫 Gemini 模型生成答案...")
+        print("正在呼叫 Gemini 模型生成答案 (嘗試啟用網路搜尋)...")
         model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
 
-        # --- *** 移除所有 tools 相關配置和錯誤處理 *** ---
+        # --- *** 嘗試使用官方範例的方式配置 Google 搜尋 *** ---
+        generation_config_with_tool = None # 先初始化
         try:
-             response = model.generate_content(prompt) # 最簡單的呼叫
-             print("Gemini 模型回應完成。")
+            # 1. 創建搜尋工具
+            # 假設更新 SDK 後，types.GoogleSearch() 可用
+            google_search_tool = types.Tool(google_search=types.GoogleSearch())
+            print("嘗試使用 types.Tool(google_search=types.GoogleSearch()) 配置工具。")
+
+            # 2. 創建 GenerationConfig 並加入工具
+            generation_config_with_tool = types.GenerateContentConfig(
+                tools=[google_search_tool]
+                # 可以加入其他 config，例如 temperature, max_output_tokens 等
+                # temperature=0.4,
+                # max_output_tokens=8000
+            )
+            print("成功創建包含搜尋工具的 GenerationConfig。")
+
+        except AttributeError:
+            print("警告：當前 SDK 版本似乎不支援 types.GoogleSearch()。將不啟用網路搜尋。")
+            traceback.print_exc() # 打印詳細錯誤以便調試
+            generation_config_with_tool = None # 確保設回 None
+        except Exception as config_err:
+            print(f"創建 GenerationConfig 時發生其他錯誤: {config_err}。將不啟用網路搜尋。")
+            traceback.print_exc()
+            generation_config_with_tool = None # 確保設回 None
+
+        # --- 呼叫 API ---
+        try:
+            if generation_config_with_tool:
+                # 如果成功配置了工具，則傳遞 generation_config
+                response = model.generate_content(prompt, generation_config=generation_config_with_tool)
+                print("使用 GenerationConfig (含搜尋工具) 呼叫 API。")
+            else:
+                # 否則，不帶 config 參數呼叫
+                print("未成功配置網路搜尋工具，將不啟用網路搜尋功能進行 API 呼叫。")
+                response = model.generate_content(prompt)
+
+            print("Gemini 模型回應完成。")
+
+        except api_exceptions.InvalidArgument as api_err:
+             # 捕獲特定的 API 400 錯誤
+             if "Search Grounding is not supported" in str(api_err):
+                 print(f"API 錯誤：模型或配置不支援網路搜尋。錯誤訊息: {api_err}")
+                 print("嘗試不使用網路搜尋重新呼叫 API...")
+                 response = model.generate_content(prompt)
+                 print("不使用網路搜尋的 API 呼叫完成。")
+             else:
+                 # 如果是其他 400 錯誤，則向上拋出
+                 print(f"API 呼叫時發生未預期的 InvalidArgument 錯誤: {api_err}")
+                 traceback.print_exc()
+                 return jsonify({"error": f"呼叫語言模型時發生參數錯誤: {api_err}"}), 400
         except Exception as api_call_err:
-             # 基本的 API 錯誤處理
+             # 捕獲其他 API 調用錯誤
              print(f"呼叫 generate_content 時發生錯誤: {api_call_err}")
              traceback.print_exc()
+             # 也可以考慮在這裡回退
+             # print("嘗試不使用網路搜尋重新呼叫 API...")
+             # response = model.generate_content(prompt)
+             # print("不使用網路搜尋的 API 呼叫完成。")
              return jsonify({"error": f"呼叫語言模型時發生錯誤: {api_call_err}"}), 500
 
 
