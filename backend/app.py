@@ -2,7 +2,7 @@ import os
 import json
 import numpy as np
 import google.generativeai as genai
-from google.generativeai.types import Tool, GenerateContentConfig, GoogleSearch, safety_types
+# from google.generativeai.types import Tool, GenerateContentConfig, GoogleSearch, safety_types # <-- 移除或註解掉這行
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -203,68 +203,59 @@ def ask_question():
 
         # --- *** 嘗試使用官方範例的方式配置 Google 搜尋 *** ---
         generation_config_with_tool = None # 先初始化
-        try:
-            # 1. 創建搜尋工具 (直接使用導入的 GoogleSearch)
-            google_search_tool = Tool(google_search=GoogleSearch())
-            print("嘗試使用 Tool(google_search=GoogleSearch()) 配置工具。")
-
-            # 2. 創建 GenerationConfig (直接使用導入的 GenerateContentConfig)
-            generation_config_with_tool = GenerateContentConfig(
-                tools=[google_search_tool]
-                # 可以加入其他 config，例如 temperature, max_output_tokens 等
-                # temperature=0.4,
-                # max_output_tokens=8000
-            )
-            print("成功創建包含搜尋工具的 GenerationConfig。")
-
-        except NameError: # 如果 GoogleSearch 還是找不到，會是 NameError
-            print("警告：當前 SDK 版本似乎不支援 GoogleSearch 類別。將不啟用網路搜尋。")
-            traceback.print_exc()
-            generation_config_with_tool = None
-        except AttributeError: # 以防萬一還是 AttributeError
-            print("警告：配置工具時發生 AttributeError。將不啟用網路搜尋。")
-            traceback.print_exc()
-            generation_config_with_tool = None
-        except Exception as config_err:
-            print(f"創建 GenerationConfig 時發生其他錯誤: {config_err}。將不啟用網路搜尋。")
-            traceback.print_exc()
-            generation_config_with_tool = None
-
+        # try: # <---- 從這裡開始註解或刪除
+        #     # 1. 創建搜尋工具 (直接使用導入的 GoogleSearch)
+        #     google_search_tool = Tool(google_search=GoogleSearch())
+        #     print("嘗試使用 Tool(google_search=GoogleSearch()) 配置工具。")
+        #
+        #     # 2. 創建 GenerationConfig (直接使用導入的 GenerateContentConfig)
+        #     generation_config_with_tool = GenerateContentConfig(
+        #         tools=[google_search_tool]
+        #         # 可以加入其他 config，例如 temperature, max_output_tokens 等
+        #         # temperature=0.4,
+        #         # max_output_tokens=8000
+        #     )
+        #     print("成功創建包含搜尋工具的 GenerationConfig。")
+        #
+        # except NameError: # 如果 GoogleSearch 還是找不到，會是 NameError
+        #     print("警告：當前 SDK 版本似乎不支援 GoogleSearch 類別。將不啟用網路搜尋。")
+        #     traceback.print_exc()
+        #     generation_config_with_tool = None
+        # except AttributeError: # 以防萬一還是 AttributeError
+        #     print("警告：配置工具時發生 AttributeError。將不啟用網路搜尋。")
+        #     traceback.print_exc()
+        #     generation_config_with_tool = None
+        # except Exception as config_err:
+        #     print(f"創建 GenerationConfig 時發生其他錯誤: {config_err}。將不啟用網路搜尋。")
+        #     traceback.print_exc()
+        #     generation_config_with_tool = None # <---- 到這裡結束註解或刪除
         # --- 呼叫 API ---
         try:
-            if generation_config_with_tool:
-                # 如果成功配置了工具，則傳遞 generation_config
-                response = model.generate_content(prompt, generation_config=generation_config_with_tool)
-                print("使用 GenerationConfig (含搜尋工具) 呼叫 API。")
-            else:
-                # 否則，不帶 config 參數呼叫
-                print("未成功配置網路搜尋工具，將不啟用網路搜尋功能進行 API 呼叫。")
-                response = model.generate_content(prompt)
-
+            print("正在進行 API 呼叫 (不啟用網路搜尋)...")
+            response = model.generate_content(prompt)
             print("Gemini 模型回應完成。")
 
         except api_exceptions.InvalidArgument as api_err:
+             # --- 開始縮排 ---
              # 捕獲特定的 API 400 錯誤
              if "Search Grounding is not supported" in str(api_err):
                  print(f"API 錯誤：模型或配置不支援網路搜尋。錯誤訊息: {api_err}")
-                 print("嘗試不使用網路搜尋重新呼叫 API...")
-                 response = model.generate_content(prompt)
-                 print("不使用網路搜尋的 API 呼叫完成。")
+                 # ... (之前的處理邏輯) ...
+                 return jsonify({"error": f"模型似乎不支援所需功能: {api_err}"}), 400
              else:
-                 # 如果是其他 400 錯誤，則向上拋出
+                 # 如果是其他 400 錯誤
                  print(f"API 呼叫時發生未預期的 InvalidArgument 錯誤: {api_err}")
                  traceback.print_exc()
                  return jsonify({"error": f"呼叫語言模型時發生參數錯誤: {api_err}"}), 400
+             # --- 結束縮排 ---
+
         except Exception as api_call_err:
+             # --- 開始縮排 ---
              # 捕獲其他 API 調用錯誤
              print(f"呼叫 generate_content 時發生錯誤: {api_call_err}")
              traceback.print_exc()
-             # 也可以考慮在這裡回退
-             # print("嘗試不使用網路搜尋重新呼叫 API...")
-             # response = model.generate_content(prompt)
-             # print("不使用網路搜尋的 API 呼叫完成。")
              return jsonify({"error": f"呼叫語言模型時發生錯誤: {api_call_err}"}), 500
-
+             # --- 結束縮排 ---
 
         answer = response.text
 
