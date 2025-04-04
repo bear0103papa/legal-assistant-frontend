@@ -2,6 +2,8 @@ import os
 import json
 import numpy as np
 import google.generativeai as genai
+# --- *** 修改 Import：直接從 genai 導入 types *** ---
+from google.generativeai import types
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS # 處理跨來源請求
@@ -238,38 +240,25 @@ def ask_question():
         # 選擇一個生成模型，例如 gemini-2.5-pro-exp-03-25
         model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25') # <--- 檢查模型名稱
 
-        # --- *** 修改 API 呼叫以啟用 Google 搜尋 *** ---
-        tools_config = None
-        if Tool and GoogleSearchRetrieval:
-             # 使用導入的類 (較佳方式)
-             gs_retrieval = GoogleSearchRetrieval() # 可以添加參數，如 disable_attribution=False
-             tools_config = [Tool(google_search_retrieval=gs_retrieval)]
-             print("使用 Tool/GoogleSearchRetrieval 配置網路搜尋。")
-        else:
-             # 簡易配置方式 (如果導入失敗，嘗試此方式，可能隨 SDK 更新)
-             # 創建一個簡單的 proto message 或 dict 來啟用
-             # 注意：這種方式的具體結構可能依賴 SDK 版本
-             try:
-                  # 嘗試創建一個表示啟用搜尋的 proto message
-                  # 這部分語法可能需要根據 google.protobuf 和 SDK 的實際情況調整
-                  search_tool_struct = Struct()
-                  # search_tool_struct.fields['google_search_retrieval'].CopyFrom(Struct()) # 空結構體表示啟用，無特定參數
-                  # 假設工具列表可以直接接受這種結構 (或簡化為字典)
-                  # tools_config = [{'google_search_retrieval': {}}] # 另一種可能的簡化配置
-                  # *** 最可能有效的簡易配置是直接使用 google.ai.generativelanguage 的 protos ***
-                  from google.ai.generativelanguage import Tool as ProtoTool, GoogleSearchRetrieval as ProtoGoogleSearchRetrieval
-                  tools_config = [ProtoTool(google_search_retrieval=ProtoGoogleSearchRetrieval())]
-                  print("使用 google.ai.generativelanguage.Tool 配置網路搜尋。")
-             except Exception as import_err:
-                  print(f"創建簡易網路搜尋配置時出錯: {import_err}。將不啟用網路搜尋。")
-                  tools_config = None
+        # --- *** 修正 API 呼叫以啟用 Google 搜尋 (根據官方範例) *** ---
+        try:
+            # 直接使用 types 來配置 Google 搜尋工具
+            tools_config = [types.Tool(google_search=types.GoogleSearch())] # <-- 使用官方範例的方式
+            print("使用 types.Tool(google_search=types.GoogleSearch()) 配置網路搜尋。")
 
+            # 呼叫模型並傳遞 tools 參數
+            response = model.generate_content(prompt, tools=tools_config)
 
-        # 根據 tools_config 是否成功創建來決定是否傳遞 tools 參數
-        if tools_config:
-             response = model.generate_content(prompt, tools=tools_config)
-        else:
+        except AttributeError as ae:
+             # 捕獲可能的屬性錯誤 (如果 types 或其子結構在當前 SDK 版本中不同)
+             print(f"配置網路搜尋時發生屬性錯誤: {ae}。可能 types.Tool 或 types.GoogleSearch 結構已變更。將不啟用網路搜尋。")
+             traceback.print_exc()
              response = model.generate_content(prompt) # 不啟用搜尋
+        except Exception as e:
+            # 捕獲其他可能的配置錯誤
+            print(f"配置或呼叫帶有網路搜尋的模型時發生未知錯誤: {e}。將不啟用網路搜尋。")
+            traceback.print_exc()
+            response = model.generate_content(prompt) # 不啟用搜尋
 
         print("Gemini 模型回應完成。")
 
