@@ -8,6 +8,17 @@ from flask_cors import CORS
 from sklearn.metrics.pairwise import cosine_similarity
 import traceback
 
+# --- *** 修改路徑定義以使其相對於 app.py *** ---
+# 獲取 app.py 所在的目錄的絕對路徑
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# DATA_DIR_NAME 仍然是子目錄名稱
+DATA_DIR_NAME = "data"
+# 構建 data 目錄的絕對路徑
+DATA_DIR_PATH = os.path.join(APP_DIR, DATA_DIR_NAME)
+# 構建 regulations.json 和 embeddings.npy 的絕對路徑
+REGULATIONS_JSON_PATH = os.path.join(DATA_DIR_PATH, "regulations.json")
+EMBEDDINGS_NPY_PATH = os.path.join(DATA_DIR_PATH, "embeddings.npy")
+
 # --- 配置與初始化 (保持不變) ---
 load_dotenv()
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
@@ -26,9 +37,6 @@ CORS(app, origins=origins)
 regulation_chunks = []
 regulation_data = []
 chunk_embeddings = None
-DATA_DIR = "data"
-REGULATIONS_JSON_PATH = os.path.join(DATA_DIR, "regulations.json")
-EMBEDDINGS_NPY_PATH = os.path.join(DATA_DIR, "embeddings.npy")
 
 def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDINGS_NPY_PATH, model_name="models/text-embedding-004"):
     # ... (函數內容保持不變) ...
@@ -102,7 +110,7 @@ def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDI
             # 儲存新計算的向量到 .npy 檔案
             try:
                  # 確保 data 目錄存在
-                 os.makedirs(DATA_DIR, exist_ok=True)
+                 os.makedirs(DATA_DIR_PATH, exist_ok=True)
                  np.save(embeddings_path, chunk_embeddings)
                  print(f"已將新計算的向量儲存到: {embeddings_path}")
             except Exception as e:
