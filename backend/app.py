@@ -153,7 +153,7 @@ def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDI
 load_and_embed_data() # 現在這個函數會處理載入或計算
 
 # --- 向量搜尋函數 ---
-def find_top_n_similar(query_embedding, doc_embeddings, n=3000): # <-- 將 n 調回一個較小的值，例如 5 或 10
+def find_top_n_similar(query_embedding, doc_embeddings, n=1000): # <-- 將 n 調回一個較小的值，例如 5 或 10
     """計算查詢向量與所有文件向量的相似度，返回最相似的 n 個索引"""
     if doc_embeddings is None or query_embedding is None:
         return []
@@ -197,7 +197,7 @@ def ask_question():
 
         # 4. 執行向量搜尋，找到最相關的 chunk 索引
         print("正在搜尋相關法規片段...")
-        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=3000) # 使用較小的 n
+        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=1000) # 使用較小的 n
         print(f"找到最相關的索引: {top_indices}")
 
         # 5. 組合上下文 (Context)
