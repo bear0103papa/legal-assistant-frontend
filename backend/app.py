@@ -18,7 +18,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 app = Flask(__name__)
 # 只允許你的 GitHub Pages 網域
-origins = ["https://your-username.github.io"]
+origins = ["https://bear0103papa.github.io/legal-assistant-frontend/"]
 # 如果你有自訂網域，也加進去
 # origins = ["https://your-username.github.io", "https://www.yourdomain.com"]
 
