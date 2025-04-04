@@ -3,7 +3,7 @@ import json
 import numpy as np
 import google.generativeai as genai
 # --- *** 修改 Import：直接從 genai 導入 types *** ---
-from google.generativeai import types
+# from google.generativeai import types # 暫時不需要直接用 types 了
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS # 處理跨來源請求
@@ -153,7 +153,7 @@ def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDI
 load_and_embed_data() # 現在這個函數會處理載入或計算
 
 # --- 向量搜尋函數 ---
-def find_top_n_similar(query_embedding, doc_embeddings, n=1000): # <-- 將 n 調回一個較小的值，例如 5 或 10
+def find_top_n_similar(query_embedding, doc_embeddings, n=100): # <-- 保持較小的 n
     """計算查詢向量與所有文件向量的相似度，返回最相似的 n 個索引"""
     if doc_embeddings is None or query_embedding is None:
         return []
@@ -197,8 +197,8 @@ def ask_question():
 
         # 4. 執行向量搜尋，找到最相關的 chunk 索引
         print("正在搜尋相關法規片段...")
-        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=1000) # 使用較小的 n
-        print(f"找到最相關的索引: {top_indices}")
+        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=100) # 使用較小的 n
+        print(f"找到最相關的索引 (n={len(top_indices)}): {top_indices}")
 
         # 5. 組合上下文 (Context)
         context = ""
@@ -240,24 +240,20 @@ def ask_question():
         # 選擇一個生成模型，例如 gemini-2.5-pro-exp-03-25
         model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25') # <--- 檢查模型名稱
 
-        # --- *** 修正 API 呼叫以啟用 Google 搜尋 (根據官方範例) *** ---
+        # --- *** 修正 API 呼叫以啟用 Google 搜尋 (使用字典配置) *** ---
         try:
-            # 直接使用 types 來配置 Google 搜尋工具
-            tools_config = [types.Tool(google_search=types.GoogleSearch())] # <-- 使用官方範例的方式
-            print("使用 types.Tool(google_search=types.GoogleSearch()) 配置網路搜尋。")
+            # 使用簡單的字典結構來配置 Google 搜尋工具
+            tools_config = [{'google_search': {}}] # <-- *** 採用 JavaScript 範例的簡單配置 ***
+            print("使用 [{'google_search': {}}] 配置網路搜尋。")
 
             # 呼叫模型並傳遞 tools 參數
             response = model.generate_content(prompt, tools=tools_config)
 
-        except AttributeError as ae:
-             # 捕獲可能的屬性錯誤 (如果 types 或其子結構在當前 SDK 版本中不同)
-             print(f"配置網路搜尋時發生屬性錯誤: {ae}。可能 types.Tool 或 types.GoogleSearch 結構已變更。將不啟用網路搜尋。")
-             traceback.print_exc()
-             response = model.generate_content(prompt) # 不啟用搜尋
         except Exception as e:
-            # 捕獲其他可能的配置錯誤
-            print(f"配置或呼叫帶有網路搜尋的模型時發生未知錯誤: {e}。將不啟用網路搜尋。")
+            # 捕獲可能的配置錯誤或 API 錯誤
+            print(f"配置或呼叫帶有網路搜尋的模型時發生錯誤: {e}。將不啟用網路搜尋。")
             traceback.print_exc()
+            # 如果配置或啟用搜尋的 API 調用失敗，回退到不使用 tools
             response = model.generate_content(prompt) # 不啟用搜尋
 
         print("Gemini 模型回應完成。")
