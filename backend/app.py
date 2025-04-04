@@ -129,7 +129,7 @@ def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDI
 load_and_embed_data() # 現在這個函數會處理載入或計算
 
 # --- 向量搜尋函數 ---
-def find_top_n_similar(query_embedding, doc_embeddings, n=5):
+def find_top_n_similar(query_embedding, doc_embeddings, n=20):
     """計算查詢向量與所有文件向量的相似度，返回最相似的 n 個索引"""
     if doc_embeddings is None or query_embedding is None:
         return []
