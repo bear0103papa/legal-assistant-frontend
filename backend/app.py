@@ -2,69 +2,50 @@ import os
 import json
 import numpy as np
 import google.generativeai as genai
-# --- *** 修改 Import：直接從 genai 導入 types *** ---
-# from google.generativeai import types # 暫時不需要直接用 types 了
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
-from flask_cors import CORS # 處理跨來源請求
+from flask_cors import CORS
 from sklearn.metrics.pairwise import cosine_similarity
-import traceback # 保持 import
+import traceback
 
-# --- 新增 Import (根據 google-generativeai SDK 的結構) ---
-# 通常 Tool 和 GoogleSearchRetrieval 會在 types 或 protos 子模組中
-# 嘗試從 google.ai.generativelanguage 導入 (根據 SDK 版本可能不同)
+# --- *** 嘗試再次導入 Protobuf Message *** ---
 try:
-    from google.ai.generativelanguage import Tool, GoogleSearchRetrieval
+    # 這是啟用 grounding 最可能正確的 proto message
+    from google.ai.generativelanguage import Tool as ProtoTool
+    from google.ai.generativelanguage import GoogleSearchRetrieval as ProtoGoogleSearchRetrieval
+    print("成功導入 google.ai.generativelanguage.Tool 和 GoogleSearchRetrieval protos.")
+    PROTO_AVAILABLE = True
 except ImportError:
-    # 如果上述導入失敗，嘗試從 types 或 protos (較舊版本可能方式)
-    try:
-        # from google.generativeai.types import Tool, GoogleSearchRetrieval # 較新 SDK 可能的方式
-        # 或者直接使用 protos (如果需要)
-        from google.protobuf.struct_pb2 import Struct
-        # 創建一個 GoogleSearchRetrieval 實例可能不需要直接導入，看 API 設計
-        print("注意：無法直接導入 Tool/GoogleSearchRetrieval，將嘗試使用簡易配置。")
-        # 在下面的 API 調用中，我們將使用更簡單的方式啟用 grounding
-        Tool = None # 設為 None 以觸發後面的簡易配置
-        GoogleSearchRetrieval = None
-    except ImportError:
-         print("警告：無法找到 Tool 或 GoogleSearchRetrieval 的導入方式，網路搜尋功能可能無法啟用。請檢查 google-generativeai SDK 版本和文檔。")
-         Tool = None
-         GoogleSearchRetrieval = None
+    print("警告：無法導入 google.ai.generativelanguage protos。網路搜尋功能可能無法正確啟用。")
+    PROTO_AVAILABLE = False
+    ProtoTool = None # 設為 None 以便後續檢查
+    ProtoGoogleSearchRetrieval = None
 
-# --- 配置與初始化 ---
-load_dotenv() # 載入 .env 文件中的環境變數
+
+# --- 配置與初始化 (保持不變) ---
+load_dotenv()
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-
 if not GOOGLE_API_KEY:
     raise ValueError("請設定 GOOGLE_API_KEY 環境變數")
-
 genai.configure(api_key=GOOGLE_API_KEY)
 
 app = Flask(__name__)
-# 允許 GitHub Pages 的基礎 URL 和包含子路徑的 URL
 origins = [
-    "https://bear0103papa.github.io", # <--- 添加這個基礎 URL
-    "https://bear0103papa.github.io/legal-assistant-frontend/" # 保留原有的以防萬一
+    "https://bear0103papa.github.io",
+    "https://bear0103papa.github.io/legal-assistant-frontend/"
 ]
-# 如果你有自訂網域，也加進去
-# origins = ["https://your-username.github.io", "https://www.yourdomain.com"]
+CORS(app, origins=origins)
 
-CORS(app, origins=origins) # 明確指定允許的來源
-
-# --- 全域變數 (用於儲存資料與向量) ---
-regulation_chunks = [] # 儲存處理後的法規片段 text
-regulation_data = []   # 儲存完整的法規資料 (包含 metadata)
-chunk_embeddings = None # 儲存法規片段的向量
-# --- 新增：定義檔案路徑 ---
+# --- 全域變數與資料載入 (保持不變) ---
+regulation_chunks = []
+regulation_data = []
+chunk_embeddings = None
 DATA_DIR = "data"
 REGULATIONS_JSON_PATH = os.path.join(DATA_DIR, "regulations.json")
 EMBEDDINGS_NPY_PATH = os.path.join(DATA_DIR, "embeddings.npy")
 
-# --- 資料載入與向量化函數 (優化版) ---
 def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDINGS_NPY_PATH, model_name="models/text-embedding-004"):
-    """
-    載入JSON資料。如果存在預計算的向量檔案則載入，否則計算向量並儲存。
-    """
+    # ... (函數內容保持不變) ...
     global regulation_chunks, chunk_embeddings, regulation_data
     print(f"開始載入與處理資料: {json_path}")
 
@@ -148,73 +129,59 @@ def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDI
             regulation_chunks = []
             regulation_data = []
 
+load_and_embed_data()
 
-# --- 在應用程式啟動時載入資料 ---
-load_and_embed_data() # 現在這個函數會處理載入或計算
-
-# --- 向量搜尋函數 ---
-def find_top_n_similar(query_embedding, doc_embeddings, n=100): # <-- 保持較小的 n
+# --- 向量搜尋函數 (保持不變, 確保 n 較小) ---
+def find_top_n_similar(query_embedding, doc_embeddings, n=100):
     """計算查詢向量與所有文件向量的相似度，返回最相似的 n 個索引"""
     if doc_embeddings is None or query_embedding is None:
         return []
-    # 計算餘弦相似度
-    # query_embedding 是 (1, dim), doc_embeddings 是 (N, dim)
-    # cosine_similarity 需要 2D 陣列輸入
     similarities = cosine_similarity(query_embedding.reshape(1, -1), doc_embeddings)[0]
-    # 獲取分數最高的 n 個索引 (使用 argsort)
-    # [::-1] 是為了反轉排序，得到降序索引
     top_n_indices = np.argsort(similarities)[::-1][:n]
     return top_n_indices
 
 # --- API 端點 ---
 @app.route('/api/ask', methods=['POST'])
 def ask_question():
-    """接收問題，執行 RAG 流程，返回答案"""
     global regulation_chunks, chunk_embeddings, regulation_data
 
-    # 1. 檢查資料是否已載入
     if chunk_embeddings is None or not regulation_chunks:
-        return jsonify({"error": "後端資料尚未準備完成或載入失敗，請查看後端日誌。"}), 503 # Service Unavailable
+        return jsonify({"error": "後端資料尚未準備完成或載入失敗，請查看後端日誌。"}), 503
 
-    # 2. 獲取請求中的問題
     data = request.get_json()
     if not data or 'question' not in data or not data['question'].strip():
-        return jsonify({"error": "請求中未包含 'question' 或問題為空。"}), 400 # Bad Request
+        return jsonify({"error": "請求中未包含 'question' 或問題為空。"}), 400
 
     user_question = data['question'].strip()
     print(f"收到問題: {user_question}")
 
     try:
-        # 3. 為問題生成向量
         print("正在為問題生成向量...")
         question_embedding_result = genai.embed_content(
             model="models/text-embedding-004",
             content=user_question,
-            task_type="RETRIEVAL_QUERY" # 指明這是用於檢索的查詢向量
+            task_type="RETRIEVAL_QUERY"
         )
         question_embedding = np.array(question_embedding_result['embedding'])
         print("問題向量生成完畢。")
 
-        # 4. 執行向量搜尋，找到最相關的 chunk 索引
         print("正在搜尋相關法規片段...")
         top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=100) # 使用較小的 n
         print(f"找到最相關的索引 (n={len(top_indices)}): {top_indices}")
 
-        # 5. 組合上下文 (Context)
         context = ""
         if len(top_indices) > 0:
-            context += "--- 以下是從我們的法規資料庫中找到的相關內容 ---\n\n" # <-- 標示來源
+            context += "--- 以下是從我們的法規資料庫中找到的相關內容 ---\n\n"
             for index in top_indices:
-                 # 從 regulation_data 中獲取完整資訊，而不僅是 text
                  item = regulation_data[index]
                  metadata = item.get('metadata', {})
                  context += f"來源: {metadata.get('title','未知標題')} (檔案: {metadata.get('source_file','未知檔案')}, 行: {metadata.get('source_row','未知')})\n"
-                 context += f"內容: {item['text']}\n\n" # item['text'] 就是 regulation_chunks[index]
+                 context += f"內容: {item['text']}\n\n"
         else:
             context = "我們的法規資料庫中沒有找到直接相關的片段。"
             print("警告：未找到相關的法規片段。")
 
-        # 6. 建構 Prompt
+        # --- Prompt 保持之前的修改，強調區分來源 ---
         prompt = f"""
         你是一位專精於台灣法律的 AI 助理。請結合以下提供的「法規資料庫內容」和必要的「網路搜尋結果」來回答「使用者的問題」。
 
@@ -235,57 +202,72 @@ def ask_question():
         --- 你的回答 (請務必區分資訊來源) ---
         """
 
-        # 7. 呼叫 Gemini 模型生成答案
-        print("正在呼叫 Gemini 模型生成答案 (已啟用網路搜尋)...")
-        # 選擇一個生成模型，例如 gemini-2.5-pro-exp-03-25
-        model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25') # <--- 檢查模型名稱
+        print("正在呼叫 Gemini 模型生成答案 (嘗試啟用網路搜尋)...")
+        model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
 
-        # --- *** 修正 API 呼叫以啟用 Google 搜尋 (使用字典配置) *** ---
+        # --- *** 嘗試使用 Protobuf Message 配置 Google 搜尋 *** ---
+        tools_config = None # 先初始化為 None
+        if PROTO_AVAILABLE:
+            try:
+                # 創建 GoogleSearchRetrieval proto message 實例 (空實例表示預設行為)
+                google_search_retrieval_proto = ProtoGoogleSearchRetrieval()
+                # 將其包裹在 Tool proto message 中
+                tool_proto = ProtoTool(google_search_retrieval=google_search_retrieval_proto)
+                # 放入列表中
+                tools_config = [tool_proto]
+                print("使用 Protobuf Message (google.ai.generativelanguage.Tool) 配置網路搜尋。")
+            except Exception as proto_err:
+                print(f"使用 Protobuf Message 配置網路搜尋時出錯: {proto_err}。將不啟用網路搜尋。")
+                traceback.print_exc()
+                tools_config = None # 配置失敗，確保設回 None
+        else:
+             print("Protobuf Message 無法導入，不啟用網路搜尋。")
+
+        # --- 呼叫 API ---
         try:
-            # 使用簡單的字典結構來配置 Google 搜尋工具
-            tools_config = [{'google_search': {}}] # <-- *** 採用 JavaScript 範例的簡單配置 ***
-            print("使用 [{'google_search': {}}] 配置網路搜尋。")
+            if tools_config:
+                # 如果成功配置了 proto tool，則使用它
+                response = model.generate_content(prompt, tools=tools_config)
+            else:
+                # 否則，不帶 tools 參數呼叫
+                print("未成功配置網路搜尋工具，將不啟用網路搜尋功能進行 API 呼叫。")
+                response = model.generate_content(prompt)
 
-            # 呼叫模型並傳遞 tools 參數
-            response = model.generate_content(prompt, tools=tools_config)
+            print("Gemini 模型回應完成。")
 
-        except Exception as e:
-            # 捕獲可能的配置錯誤或 API 錯誤
-            print(f"配置或呼叫帶有網路搜尋的模型時發生錯誤: {e}。將不啟用網路搜尋。")
-            traceback.print_exc()
-            # 如果配置或啟用搜尋的 API 調用失敗，回退到不使用 tools
-            response = model.generate_content(prompt) # 不啟用搜尋
+        except Exception as api_call_err:
+             # 捕獲 API 調用本身可能因為 tools 配置或其他原因產生的錯誤
+             print(f"呼叫 generate_content 時發生錯誤 (可能與 tools 有關): {api_call_err}")
+             traceback.print_exc()
+             # 如果帶 tools 的調用失敗，嘗試不帶 tools 再調用一次
+             print("嘗試不使用網路搜尋重新呼叫 API...")
+             response = model.generate_content(prompt)
+             print("不使用網路搜尋的 API 呼叫完成。")
 
-        print("Gemini 模型回應完成。")
 
-        # 8. 提取並返回答案
         answer = response.text
 
-        # 修改 sources 的產生方式
+        # 處理 sources 的回傳 (保持不變)
         sources = []
         for index in top_indices:
             item = regulation_data[index]
             source_info = {
                 "metadata": item.get('metadata', {}),
-                "text": item.get('text', '') # <-- 加入 text 欄位
+                "text": item.get('text', '')
             }
             sources.append(source_info)
 
         return jsonify({
             "answer": answer,
-            "sources": sources # 現在 sources 包含 text 了
+            "sources": sources
             })
 
     except Exception as e:
-        print(f"處理請求時發生錯誤: {e}")
-        # 在生產環境中，這裡應該記錄更詳細的錯誤資訊
+        print(f"處理請求時發生嚴重錯誤: {e}")
         traceback.print_exc()
-        return jsonify({"error": f"處理請求時發生內部錯誤: {e}"}), 500 # Internal Server Error
-
+        return jsonify({"error": f"處理請求時發生內部錯誤: {e}"}), 500
 
 if __name__ == '__main__':
-    # 應用程式啟動時即載入資料並生成向量
-    # load_and_embed_data() # 這行已經在全域範圍被調用
+    # load_and_embed_data() # 已在全域調用
     print("警告：正在使用 Flask 開發伺服器運行。部署時應使用 Gunicorn。")
-    # 確保 debug=False，避免在生產中暴露敏感信息
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5001)), debug=False)
