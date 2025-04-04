@@ -87,7 +87,6 @@ header p {
 
 /* 載入中指示器 */
 #loading-indicator {
-    display: flex;
     align-items: center;
     justify-content: center;
     gap: 1rem;
