@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>法律 AI 問答系統</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>法律 AI 問答系統</h1>
+            <p>輸入您的法律問題，AI 將根據相關法規內容嘗試回答。</p>
+        </header>
+
+        <main>
+            <form id="qa-form">
+                <label for="question">您的問題：</label>
+                <textarea id="question" name="question" rows="4" required placeholder="請在此輸入您的法律問題..."></textarea>
+                <button type="submit" id="submit-button">提出問題</button>
+            </form>
+
+            <div id="loading-indicator" class="hidden">
+                <div class="spinner"></div>
+                <p>正在思考中，請稍候...</p>
+            </div>
+
+            <div id="error-message" class="hidden error"></div>
+
+            <div id="results" class="hidden">
+                <h2>AI 回答：</h2>
+                <div id="answer" class="result-box"></div>
+
+                <h2>相關法規來源：</h2>
+                <ul id="sources" class="result-box sources-list">
+                    <!-- 來源資訊將由 JavaScript 動態填入 -->
+                </ul>
+            </div>
+        </main>
+
+        <footer>
+            <p>免責聲明：本系統回答僅供參考，不構成正式法律意見。如有具體法律問題，請諮詢專業律師。</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
