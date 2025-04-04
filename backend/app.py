@@ -2,7 +2,7 @@ import os
 import json
 import numpy as np
 import google.generativeai as genai
-from google.generativeai import types
+from google.generativeai.types import Tool, GenerateContentConfig, GoogleSearch, safety_types
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -204,13 +204,12 @@ def ask_question():
         # --- *** 嘗試使用官方範例的方式配置 Google 搜尋 *** ---
         generation_config_with_tool = None # 先初始化
         try:
-            # 1. 創建搜尋工具
-            # 假設更新 SDK 後，types.GoogleSearch() 可用
-            google_search_tool = types.Tool(google_search=types.GoogleSearch())
-            print("嘗試使用 types.Tool(google_search=types.GoogleSearch()) 配置工具。")
+            # 1. 創建搜尋工具 (直接使用導入的 GoogleSearch)
+            google_search_tool = Tool(google_search=GoogleSearch())
+            print("嘗試使用 Tool(google_search=GoogleSearch()) 配置工具。")
 
-            # 2. 創建 GenerationConfig 並加入工具
-            generation_config_with_tool = types.GenerateContentConfig(
+            # 2. 創建 GenerationConfig (直接使用導入的 GenerateContentConfig)
+            generation_config_with_tool = GenerateContentConfig(
                 tools=[google_search_tool]
                 # 可以加入其他 config，例如 temperature, max_output_tokens 等
                 # temperature=0.4,
@@ -218,14 +217,18 @@ def ask_question():
             )
             print("成功創建包含搜尋工具的 GenerationConfig。")
 
-        except AttributeError:
-            print("警告：當前 SDK 版本似乎不支援 types.GoogleSearch()。將不啟用網路搜尋。")
-            traceback.print_exc() # 打印詳細錯誤以便調試
-            generation_config_with_tool = None # 確保設回 None
+        except NameError: # 如果 GoogleSearch 還是找不到，會是 NameError
+            print("警告：當前 SDK 版本似乎不支援 GoogleSearch 類別。將不啟用網路搜尋。")
+            traceback.print_exc()
+            generation_config_with_tool = None
+        except AttributeError: # 以防萬一還是 AttributeError
+            print("警告：配置工具時發生 AttributeError。將不啟用網路搜尋。")
+            traceback.print_exc()
+            generation_config_with_tool = None
         except Exception as config_err:
             print(f"創建 GenerationConfig 時發生其他錯誤: {config_err}。將不啟用網路搜尋。")
             traceback.print_exc()
-            generation_config_with_tool = None # 確保設回 None
+            generation_config_with_tool = None
 
         # --- 呼叫 API ---
         try:
