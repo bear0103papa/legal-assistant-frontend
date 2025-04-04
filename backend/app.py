@@ -8,20 +8,6 @@ from flask_cors import CORS
 from sklearn.metrics.pairwise import cosine_similarity
 import traceback
 
-# --- *** 嘗試再次導入 Protobuf Message *** ---
-try:
-    # 這是啟用 grounding 最可能正確的 proto message
-    from google.ai.generativelanguage import Tool as ProtoTool
-    from google.ai.generativelanguage import GoogleSearchRetrieval as ProtoGoogleSearchRetrieval
-    print("成功導入 google.ai.generativelanguage.Tool 和 GoogleSearchRetrieval protos.")
-    PROTO_AVAILABLE = True
-except ImportError:
-    print("警告：無法導入 google.ai.generativelanguage protos。網路搜尋功能可能無法正確啟用。")
-    PROTO_AVAILABLE = False
-    ProtoTool = None # 設為 None 以便後續檢查
-    ProtoGoogleSearchRetrieval = None
-
-
 # --- 配置與初始化 (保持不變) ---
 load_dotenv()
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
@@ -131,8 +117,8 @@ def load_and_embed_data(json_path=REGULATIONS_JSON_PATH, embeddings_path=EMBEDDI
 
 load_and_embed_data()
 
-# --- 向量搜尋函數 (保持不變, 確保 n 較小) ---
-def find_top_n_similar(query_embedding, doc_embeddings, n=100):
+# --- 向量搜尋函數 (確保 n 較小) ---
+def find_top_n_similar(query_embedding, doc_embeddings, n=10): # <-- *** 確保 n 值很小 ***
     """計算查詢向量與所有文件向量的相似度，返回最相似的 n 個索引"""
     if doc_embeddings is None or query_embedding is None:
         return []
@@ -166,7 +152,7 @@ def ask_question():
         print("問題向量生成完畢。")
 
         print("正在搜尋相關法規片段...")
-        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=100) # 使用較小的 n
+        top_indices = find_top_n_similar(question_embedding, chunk_embeddings, n=10) # <-- *** 確保 n 值很小 ***
         print(f"找到最相關的索引 (n={len(top_indices)}): {top_indices}")
 
         context = ""
@@ -181,68 +167,36 @@ def ask_question():
             context = "我們的法規資料庫中沒有找到直接相關的片段。"
             print("警告：未找到相關的法規片段。")
 
-        # --- Prompt 保持之前的修改，強調區分來源 ---
+        # --- *** 簡化 Prompt *** ---
         prompt = f"""
-        你是一位專精於台灣法律的 AI 助理。請結合以下提供的「法規資料庫內容」和必要的「網路搜尋結果」來回答「使用者的問題」。
+        你是一位專精於台灣法律的 AI 助理。請根據以下提供的「相關法規內容」來回答「使用者的問題」。
 
         你的回答應該：
-        1.  **優先** 參考「法規資料庫內容」。如果這部分內容足以回答，請主要依據它。
-        2.  **僅在必要時** 使用「網路搜尋結果」來補充法規資料庫中沒有的資訊、最新的發展或進行事實核查。
-        3.  **非常重要：** 在你的回答中，必須 **明確區分** 資訊來源。使用如「根據我們資料庫中的《XX法》...」、「根據網路搜尋的最新資訊...」等字句來標示。
-        4.  如果兩個來源的資訊有衝突，請指出衝突點。
-        5.  如果法規資料庫和網路搜尋都無法提供答案，請明確說明。
-        6.  保持客觀、中立和專業。
-        7.  使用繁體中文回答。
+        - 嚴格基於提供的「相關法規內容」。
+        - 如果提供的內容不足以回答問題，請明確說明無法根據現有資訊回答。
+        - 保持客觀、中立和專業。
+        - 使用繁體中文回答。
 
-        --- 法規資料庫內容 ---
+        --- 相關法規內容 ---
         {context}
         --- 使用者的問題 ---
         {user_question}
 
-        --- 你的回答 (請務必區分資訊來源) ---
+        --- 你的回答 ---
         """
 
-        print("正在呼叫 Gemini 模型生成答案 (嘗試啟用網路搜尋)...")
+        print("正在呼叫 Gemini 模型生成答案...")
         model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
 
-        # --- *** 嘗試使用 Protobuf Message 配置 Google 搜尋 *** ---
-        tools_config = None # 先初始化為 None
-        if PROTO_AVAILABLE:
-            try:
-                # 創建 GoogleSearchRetrieval proto message 實例 (空實例表示預設行為)
-                google_search_retrieval_proto = ProtoGoogleSearchRetrieval()
-                # 將其包裹在 Tool proto message 中
-                tool_proto = ProtoTool(google_search_retrieval=google_search_retrieval_proto)
-                # 放入列表中
-                tools_config = [tool_proto]
-                print("使用 Protobuf Message (google.ai.generativelanguage.Tool) 配置網路搜尋。")
-            except Exception as proto_err:
-                print(f"使用 Protobuf Message 配置網路搜尋時出錯: {proto_err}。將不啟用網路搜尋。")
-                traceback.print_exc()
-                tools_config = None # 配置失敗，確保設回 None
-        else:
-             print("Protobuf Message 無法導入，不啟用網路搜尋。")
-
-        # --- 呼叫 API ---
+        # --- *** 移除所有 tools 相關配置和錯誤處理 *** ---
         try:
-            if tools_config:
-                # 如果成功配置了 proto tool，則使用它
-                response = model.generate_content(prompt, tools=tools_config)
-            else:
-                # 否則，不帶 tools 參數呼叫
-                print("未成功配置網路搜尋工具，將不啟用網路搜尋功能進行 API 呼叫。")
-                response = model.generate_content(prompt)
-
-            print("Gemini 模型回應完成。")
-
+             response = model.generate_content(prompt) # 最簡單的呼叫
+             print("Gemini 模型回應完成。")
         except Exception as api_call_err:
-             # 捕獲 API 調用本身可能因為 tools 配置或其他原因產生的錯誤
-             print(f"呼叫 generate_content 時發生錯誤 (可能與 tools 有關): {api_call_err}")
+             # 基本的 API 錯誤處理
+             print(f"呼叫 generate_content 時發生錯誤: {api_call_err}")
              traceback.print_exc()
-             # 如果帶 tools 的調用失敗，嘗試不帶 tools 再調用一次
-             print("嘗試不使用網路搜尋重新呼叫 API...")
-             response = model.generate_content(prompt)
-             print("不使用網路搜尋的 API 呼叫完成。")
+             return jsonify({"error": f"呼叫語言模型時發生錯誤: {api_call_err}"}), 500
 
 
         answer = response.text
