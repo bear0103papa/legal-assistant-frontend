@@ -279,6 +279,13 @@ def ask_question():
         traceback.print_exc()
         return jsonify({"error": f"處理請求時發生內部錯誤: {e}"}), 500
 
+# <---- 新增健康檢查路由 ---->
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """一個簡單的健康檢查端點，用於喚醒服務或確認其正在運行"""
+    return jsonify({"status": "ok"}), 200
+# <---- 結束新增 ---->
+
 if __name__ == '__main__':
     # load_and_embed_data() # 已在全域調用
     print("警告：正在使用 Flask 開發伺服器運行。部署時應使用 Gunicorn。")

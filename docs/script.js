@@ -10,34 +10,48 @@ const sourcesUl = document.getElementById('sources');
 
 // --- 設定後端 API 位址 ---
 // 開發時使用本地後端
-const API_ENDPOINT = 'https://legal-assistant-api.onrender.com/api/ask';
+const HEALTH_CHECK_ENDPOINT = 'https://legal-assistant-api.onrender.com/api/health'; // 健康檢查端點
+const API_ENDPOINT = 'https://legal-assistant-api.onrender.com/api/ask'; // 主要 API 端點
 // 部署後端到 Render 後，需要將此處改為 Render 提供的 URL
 // const API_ENDPOINT = 'YOUR_RENDER_BACKEND_URL/api/ask';
 
 // 監聽表單提交事件
 qaForm.addEventListener('submit', async (event) => {
-    event.preventDefault(); // 防止表單傳統提交
-
+    event.preventDefault();
     const userQuestion = questionTextarea.value.trim();
 
-    // 基本驗證
     if (!userQuestion) {
         displayError("請輸入您的問題。");
         return;
     }
 
-    // UI 狀態更新：顯示載入中、清除舊結果、禁用按鈕
-    loadingIndicator.classList.remove('hidden');
-    resultsDiv.classList.add('hidden');
-    errorMessageDiv.classList.add('hidden'); // 清除舊錯誤
-    answerDiv.textContent = ''; // 清除舊答案
-    sourcesUl.innerHTML = ''; // 清除舊來源
-    submitButton.disabled = true;
-    submitButton.textContent = '處理中...';
+    // --- UI 更新：初始狀態 ---
+    setLoadingState(true, "正在連接伺服器..."); // 初始訊息
+    clearResultsAndErrors();
 
+    let backendAwake = false;
     try {
-        // 發送請求到後端 API
-        const response = await fetch(API_ENDPOINT, {
+        // --- 步驟 1: 嘗試呼叫健康檢查端點喚醒伺服器 ---
+        console.log("正在執行健康檢查...");
+        const healthResponse = await fetch(HEALTH_CHECK_ENDPOINT);
+
+        if (!healthResponse.ok) {
+            // 如果健康檢查失敗，可能是伺服器真的有問題
+            throw new Error(`伺服器健康檢查失敗，狀態碼：${healthResponse.status}`);
+        }
+
+        const healthData = await healthResponse.json();
+        if (healthData.status === 'ok') {
+            backendAwake = true;
+            console.log("健康檢查成功，後端已喚醒或正在運行。");
+        } else {
+             throw new Error("伺服器健康檢查回應異常。");
+        }
+
+        // --- 步驟 2: 如果健康檢查成功，才呼叫主要 API ---
+        setLoadingState(true, "正在處理您的問題..."); // 更新訊息
+
+        const apiResponse = await fetch(API_ENDPOINT, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -45,37 +59,54 @@ qaForm.addEventListener('submit', async (event) => {
             body: JSON.stringify({ question: userQuestion }),
         });
 
-        // 檢查回應狀態
-        if (!response.ok) {
-            // 嘗試解析後端回傳的錯誤訊息
+        if (!apiResponse.ok) {
             let errorData;
             try {
-                errorData = await response.json();
+                errorData = await apiResponse.json();
             } catch (parseError) {
-                // 如果無法解析 JSON，顯示通用錯誤
-                throw new Error(`伺服器錯誤，狀態碼：${response.status}`);
+                throw new Error(`伺服器錯誤，狀態碼：${apiResponse.status}`);
             }
-            // 顯示後端提供的錯誤訊息或通用訊息
-            throw new Error(errorData?.error || `請求失敗，狀態碼：${response.status}`);
+            throw new Error(errorData?.error || `請求失敗，狀態碼：${apiResponse.status}`);
         }
 
-        // 解析成功的 JSON 回應
-        const data = await response.json();
-
-        // 顯示結果
+        const data = await apiResponse.json();
         displayResults(data.answer, data.sources);
 
     } catch (error) {
-        // 捕捉 fetch 錯誤或手動拋出的錯誤
         console.error("請求錯誤:", error);
-        displayError(`發生錯誤：${error.message}`);
+        // 如果是健康檢查就失敗了，給出不同的提示
+        if (!backendAwake) {
+             displayError(`無法連接到 AI 伺服器：${error.message}`);
+        } else {
+             displayError(`處理問題時發生錯誤：${error.message}`);
+        }
     } finally {
-        // 無論成功或失敗，都要隱藏載入中並啟用按鈕
+        // 無論如何，結束載入狀態
+        setLoadingState(false);
+    }
+});
+
+// --- Helper 函數 ---
+
+function setLoadingState(isLoading, message = "處理中...") {
+    if (isLoading) {
+        loadingIndicator.classList.remove('hidden');
+        loadingIndicator.querySelector('p').textContent = message; // 更新載入訊息
+        submitButton.disabled = true;
+        submitButton.textContent = message.includes("處理中") ? "處理中..." : "請稍候..."; // 按鈕文字可以簡單些
+    } else {
         loadingIndicator.classList.add('hidden');
         submitButton.disabled = false;
         submitButton.textContent = '提出問題';
     }
-});
+}
+
+function clearResultsAndErrors() {
+    resultsDiv.classList.add('hidden');
+    errorMessageDiv.classList.add('hidden');
+    answerDiv.textContent = '';
+    sourcesUl.innerHTML = '';
+}
 
 // 顯示結果的函數
 function displayResults(answer, sources) {
