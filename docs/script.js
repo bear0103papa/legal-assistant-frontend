@@ -10,7 +10,7 @@ const sourcesUl = document.getElementById('sources');
 
 // --- 設定後端 API 位址 ---
 // 開發時使用本地後端
-const API_ENDPOINT = 'http://127.0.0.1:5001/api/ask';
+const API_ENDPOINT = 'https://legal-assistant-api.onrender.com/api/ask';
 // 部署後端到 Render 後，需要將此處改為 Render 提供的 URL
 // const API_ENDPOINT = 'YOUR_RENDER_BACKEND_URL/api/ask';
 
