@@ -84,17 +84,21 @@ function displayResults(answer, sources) {
 
     sourcesUl.innerHTML = ''; // 清空舊來源
     if (sources && sources.length > 0) {
-        sources.forEach(source => {
+        sources.forEach(source => { // 現在 source 包含 metadata 和 text
             const li = document.createElement('li');
-            // 顯示主要的中繼資料
+            const metadata = source.metadata || {}; // 取出 metadata
+            const text = source.text || "N/A"; // 取出 text
+
+            // 顯示主要的中繼資料和文本
             li.innerHTML = `
-                <strong>法規標題:</strong> ${escapeHtml(source.title || 'N/A')}<br>
-                <strong>來源檔案:</strong> ${escapeHtml(source.source_file || 'N/A')}<br>
-                <strong>原始行號:</strong> ${escapeHtml(source.source_row || 'N/A')}<br>
-                <strong>文件日期:</strong> ${escapeHtml(source.date || 'N/A')}<br>
-                <strong>文號:</strong> ${escapeHtml(source.number || 'N/A')}
-            `;
-            // 可以在這裡添加一個按鈕或連結，未來用於顯示完整的原始文本 (如果後端回傳的話)
+                <strong>法規標題:</strong> ${escapeHtml(metadata.title || 'N/A')}<br>
+                <strong>來源檔案:</strong> ${escapeHtml(metadata.source_file || 'N/A')}<br>
+                <strong>原始行號:</strong> ${escapeHtml(metadata.source_row || 'N/A')}<br>
+                <strong>文件日期:</strong> ${escapeHtml(metadata.date || 'N/A')}<br>
+                <strong>文號:</strong> ${escapeHtml(metadata.number || 'N/A')}<br>
+                <strong style="margin-top: 5px; display: block;">內容片段:</strong>
+                <div class="source-text">${escapeHtml(text)}</div>
+            `; // <--- 加入顯示 text 的部分
             sourcesUl.appendChild(li);
         });
     } else {

@@ -218,12 +218,19 @@ def ask_question():
         # 8. 提取並返回答案
         answer = response.text
 
-        # 同時返回找到的來源資訊 (可選，供前端顯示)
-        sources = [regulation_data[i]['metadata'] for i in top_indices]
+        # 修改 sources 的產生方式
+        sources = []
+        for index in top_indices:
+            item = regulation_data[index]
+            source_info = {
+                "metadata": item.get('metadata', {}),
+                "text": item.get('text', '') # <-- 加入 text 欄位
+            }
+            sources.append(source_info)
 
         return jsonify({
             "answer": answer,
-            "sources": sources # 返回相關來源的 metadata
+            "sources": sources # 現在 sources 包含 text 了
             })
 
     except Exception as e:
